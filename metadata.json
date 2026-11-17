@@ -1,0 +1,6 @@
+{
+  "name": "Apex Telemetry",
+  "description": "Painel de telemetria em tempo real para F1 25 via UDP (porta 20777) com simulador integrado, mapa da pista ao vivo, condições do veículo, grid, gráficos detalhados e sincronização na nuvem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

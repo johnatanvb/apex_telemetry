@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "TelemetrySession": {
+      "title": "TelemetrySession",
+      "description": "Saved F1 25 race or practice telemetry session summary stored per authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "trackName": { "type": "string", "description": "Circuit display name" },
+        "sessionType": { "type": "string", "description": "Race, Qualifying, or Practice" },
+        "weather": { "type": "string", "description": "Track weather conditions" },
+        "sourceMode": { "type": "string", "enum": ["UDP", "SIMULATOR"], "description": "Telemetry data source" },
+        "bestLapMs": { "type": "integer", "description": "Fastest lap time in milliseconds" },
+        "avgLapMs": { "type": "integer", "description": "Average clean lap time in milliseconds" },
+        "topSpeedKmh": { "type": "integer", "description": "Peak speed in km/h" },
+        "consistencyPct": { "type": "number", "description": "Lap consistency score 0-100" },
+        "totalLaps": { "type": "integer", "description": "Completed laps count" },
+        "finishPosition": { "type": "integer", "description": "Final or current race position 1-22" },
+        "pitStops": { "type": "integer", "description": "Total pit stops completed" },
+        "primaryCompound": { "type": "string", "enum": ["S", "M", "H", "I", "W"], "description": "Primary tyre compound code" },
+        "trackTempC": { "type": "integer", "description": "Track surface temperature in Celsius" },
+        "notes": { "type": "string", "description": "Optional engineer or setup notes" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update" }
+      },
+      "required": [
+        "userId",
+        "trackName",
+        "sessionType",
+        "weather",
+        "sourceMode",
+        "bestLapMs",
+        "avgLapMs",
+        "topSpeedKmh",
+        "consistencyPct",
+        "totalLaps",
+        "finishPosition",
+        "pitStops",
+        "primaryCompound",
+        "trackTempC",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedLap": {
+      "title": "SavedLap",
+      "description": "Individual completed lap telemetry summary and sampled speed trace belonging to a saved session.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "sessionId": { "type": "string", "description": "Parent TelemetrySession ID" },
+        "lapNumber": { "type": "integer", "description": "1-based lap number" },
+        "lapTimeMs": { "type": "integer", "description": "Total lap time in milliseconds" },
+        "sector1Ms": { "type": "integer", "description": "Sector 1 time in milliseconds" },
+        "sector2Ms": { "type": "integer", "description": "Sector 2 time in milliseconds" },
+        "sector3Ms": { "type": "integer", "description": "Sector 3 time in milliseconds" },
+        "tyreCompound": { "type": "string", "enum": ["S", "M", "H", "I", "W"], "description": "Tyre compound code" },
+        "topSpeedKmh": { "type": "integer", "description": "Maximum speed on lap in km/h" },
+        "avgThrottlePct": { "type": "integer", "description": "Average throttle percentage 0-100" },
+        "maxTyreWearPct": { "type": "integer", "description": "Peak tyre wear percentage 0-100" },
+        "speedTrace": { "type": "array", "description": "Sampled speed points along lap distance (max 60 points)" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation" }
+      },
+      "required": [
+        "userId",
+        "sessionId",
+        "lapNumber",
+        "lapTimeMs",
+        "sector1Ms",
+        "sector2Ms",
+        "sector3Ms",
+        "tyreCompound",
+        "topSpeedKmh",
+        "avgThrottlePct",
+        "maxTyreWearPct",
+        "speedTrace",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/TelemetrySession" },
+      "description": "User-owned F1 25 telemetry race and practice sessions"
+    },
+    "/users/{userId}/sessions/{sessionId}/laps/{lapId}": {
+      "schema": { "$ref": "#/entities/SavedLap" },
+      "description": "Completed laps and sampled speed traces under each saved session"
+    }
+  }
+}

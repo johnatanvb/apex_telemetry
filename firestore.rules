@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidCompound(c) {
+      return c in ['S', 'M', 'H', 'I', 'W'];
+    }
+
+    function isValidTelemetrySession(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.trackName is string && data.trackName.size() >= 1 && data.trackName.size() <= 80 &&
+             data.sessionType is string && data.sessionType.size() >= 1 && data.sessionType.size() <= 40 &&
+             data.weather is string && data.weather.size() >= 1 && data.weather.size() <= 40 &&
+             data.sourceMode in ['UDP', 'SIMULATOR'] &&
+             data.bestLapMs is int && data.bestLapMs >= 0 && data.bestLapMs <= 3600000 &&
+             data.avgLapMs is int && data.avgLapMs >= 0 && data.avgLapMs <= 3600000 &&
+             data.topSpeedKmh is int && data.topSpeedKmh >= 0 && data.topSpeedKmh <= 450 &&
+             data.consistencyPct is number && data.consistencyPct >= 0 && data.consistencyPct <= 100 &&
+             data.totalLaps is int && data.totalLaps >= 0 && data.totalLaps <= 200 &&
+             data.finishPosition is int && data.finishPosition >= 1 && data.finishPosition <= 22 &&
+             data.pitStops is int && data.pitStops >= 0 && data.pitStops <= 20 &&
+             isValidCompound(data.primaryCompound) &&
+             data.trackTempC is int && data.trackTempC >= -20 && data.trackTempC <= 90 &&
+             data.notes is string && data.notes.size() <= 300;
+    }
+
+    function isValidSavedLap(data, sessionId) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.sessionId is string && data.sessionId == sessionId &&
+             data.lapNumber is int && data.lapNumber >= 1 && data.lapNumber <= 200 &&
+             data.lapTimeMs is int && data.lapTimeMs >= 1000 && data.lapTimeMs <= 3600000 &&
+             data.sector1Ms is int && data.sector1Ms >= 0 && data.sector1Ms <= 1200000 &&
+             data.sector2Ms is int && data.sector2Ms >= 0 && data.sector2Ms <= 1200000 &&
+             data.sector3Ms is int && data.sector3Ms >= 0 && data.sector3Ms <= 1200000 &&
+             isValidCompound(data.tyreCompound) &&
+             data.topSpeedKmh is int && data.topSpeedKmh >= 0 && data.topSpeedKmh <= 450 &&
+             data.avgThrottlePct is int && data.avgThrottlePct >= 0 && data.avgThrottlePct <= 100 &&
+             data.maxTyreWearPct is int && data.maxTyreWearPct >= 0 && data.maxTyreWearPct <= 100 &&
+             data.speedTrace is list && data.speedTrace.size() <= 60 &&
+             (data.speedTrace.size() == 0 || (data.speedTrace[0] is int && data.speedTrace[0] >= 0 && data.speedTrace[0] <= 450));
+    }
+
+    match /users/{userId}/sessions/{sessionId} {
+      allow list: if isOwner(userId);
+      allow get, delete: if isOwner(userId) && isValidId(sessionId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(sessionId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'trackName', 'sessionType', 'weather', 'sourceMode',
+                         'bestLapMs', 'avgLapMs', 'topSpeedKmh', 'consistencyPct',
+                         'totalLaps', 'finishPosition', 'pitStops', 'primaryCompound',
+                         'trackTempC', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'trackName', 'sessionType', 'weather', 'sourceMode',
+                         'bestLapMs', 'avgLapMs', 'topSpeedKmh', 'consistencyPct',
+                         'totalLaps', 'finishPosition', 'pitStops', 'primaryCompound',
+                         'trackTempC', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       isValidTelemetrySession(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(sessionId) &&
+                       isValidTelemetrySession(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'notes', 'bestLapMs', 'avgLapMs', 'topSpeedKmh',
+                         'consistencyPct', 'totalLaps', 'finishPosition', 'pitStops', 'updatedAt'
+                       ]);
+
+      match /laps/{lapId} {
+        allow list: if isOwner(userId);
+        allow get, delete: if isOwner(userId) && isValidId(sessionId) && isValidId(lapId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(sessionId) &&
+                         isValidId(lapId) &&
+                         existsAfter(/databases/$(database)/documents/users/$(userId)/sessions/$(sessionId)) &&
+                         incoming().keys().hasAll([
+                           'userId', 'sessionId', 'lapNumber', 'lapTimeMs',
+                           'sector1Ms', 'sector2Ms', 'sector3Ms', 'tyreCompound',
+                           'topSpeedKmh', 'avgThrottlePct', 'maxTyreWearPct',
+                           'speedTrace', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'sessionId', 'lapNumber', 'lapTimeMs',
+                           'sector1Ms', 'sector2Ms', 'sector3Ms', 'tyreCompound',
+                           'topSpeedKmh', 'avgThrottlePct', 'maxTyreWearPct',
+                           'speedTrace', 'createdAt'
+                         ]) &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         isValidSavedLap(incoming(), sessionId);
+
+        allow update: if false;
+      }
+    }
+  }
+}
