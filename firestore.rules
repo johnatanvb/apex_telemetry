@@ -32,6 +32,8 @@ service cloud.firestore {
 
     function isValidTelemetrySession(data) {
       return data.userId is string && data.userId == request.auth.uid &&
+             data.gameTitle is string && data.gameTitle.size() >= 2 && data.gameTitle.size() <= 40 &&
+             data.carCategory in ['FORMULA', 'GT_ENDURANCE', 'STREET_TOURING'] &&
              data.trackName is string && data.trackName.size() >= 1 && data.trackName.size() <= 80 &&
              data.sessionType is string && data.sessionType.size() >= 1 && data.sessionType.size() <= 40 &&
              data.weather is string && data.weather.size() >= 1 && data.weather.size() <= 40 &&
@@ -71,13 +73,13 @@ service cloud.firestore {
       allow create: if isOwner(userId) &&
                        isValidId(sessionId) &&
                        incoming().keys().hasAll([
-                         'userId', 'trackName', 'sessionType', 'weather', 'sourceMode',
+                         'userId', 'gameTitle', 'carCategory', 'trackName', 'sessionType', 'weather', 'sourceMode',
                          'bestLapMs', 'avgLapMs', 'topSpeedKmh', 'consistencyPct',
                          'totalLaps', 'finishPosition', 'pitStops', 'primaryCompound',
                          'trackTempC', 'notes', 'createdAt', 'updatedAt'
                        ]) &&
                        incoming().keys().hasOnly([
-                         'userId', 'trackName', 'sessionType', 'weather', 'sourceMode',
+                         'userId', 'gameTitle', 'carCategory', 'trackName', 'sessionType', 'weather', 'sourceMode',
                          'bestLapMs', 'avgLapMs', 'topSpeedKmh', 'consistencyPct',
                          'totalLaps', 'finishPosition', 'pitStops', 'primaryCompound',
                          'trackTempC', 'notes', 'createdAt', 'updatedAt'

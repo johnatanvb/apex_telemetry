@@ -1,6 +1,7 @@
 package com.example.telemetry.model
 
 import androidx.compose.ui.graphics.Color
+import com.example.telemetry.data.GameCatalog
 import com.example.ui.theme.SectorGreen
 import com.example.ui.theme.SectorPurple
 import com.example.ui.theme.SectorYellow
@@ -13,15 +14,142 @@ import com.example.ui.theme.TyreWetBlue
 
 enum class TelemetrySourceMode(val label: String) {
     SIMULATOR("Simulador"),
-    UDP("UDP 20777"),
+    UDP("UDP Ao Vivo"),
 }
 
 enum class ConnectionState(val label: String) {
     DISCONNECTED("Desconectado"),
     WAITING_UDP("Aguardando UDP"),
-    CONNECTED_UDP("F1 25 Ao Vivo"),
+    CONNECTED_UDP("UDP Ao Vivo"),
     SIMULATOR_ACTIVE("Simulador Ativo"),
 }
+
+enum class CarCategory(
+    val label: String,
+    val setupTitle: String,
+) {
+    FORMULA("Fórmula / Monoposto", "Setup Fórmula / Monoposto"),
+    GT_ENDURANCE("GT / Endurance", "Setup GT3 / Endurance"),
+    STREET_TOURING("Turismo / Rua", "Setup Turismo & Rua"),
+}
+
+enum class GameTitle(
+    val displayName: String,
+    val shortTag: String,
+    val defaultCategory: CarCategory,
+    val defaultPort: Int,
+    val badgeColorHex: Long,
+    val protocolSummary: String,
+) {
+    AUTO(
+        displayName = "Auto (Detectar)",
+        shortTag = "AUTO",
+        defaultCategory = CarCategory.FORMULA,
+        defaultPort = 20777,
+        badgeColorHex = 0xFF00D2BE,
+        protocolSummary = "Detecção automática multi-porta",
+    ),
+    F1_25(
+        displayName = "EA Sports F1 25",
+        shortTag = "F1 25",
+        defaultCategory = CarCategory.FORMULA,
+        defaultPort = 20777,
+        badgeColorHex = 0xFFE10600,
+        protocolSummary = "UDP Formato 2025 (20777)",
+    ),
+    F1_24(
+        displayName = "EA Sports F1 24",
+        shortTag = "F1 24",
+        defaultCategory = CarCategory.FORMULA,
+        defaultPort = 20777,
+        badgeColorHex = 0xFFE10600,
+        protocolSummary = "UDP Formato 2024 (20777)",
+    ),
+    F1_23(
+        displayName = "EA Sports F1 23",
+        shortTag = "F1 23",
+        defaultCategory = CarCategory.FORMULA,
+        defaultPort = 20777,
+        badgeColorHex = 0xFFE10600,
+        protocolSummary = "UDP Formato 2023 (20777)",
+    ),
+    GRAN_TURISMO_7(
+        displayName = "Gran Turismo 7",
+        shortTag = "GT7",
+        defaultCategory = CarCategory.GT_ENDURANCE,
+        defaultPort = 33740,
+        badgeColorHex = 0xFF2979FF,
+        protocolSummary = "Salsa20 UDP (33740 / Heartbeat 33739)",
+    ),
+    FORZA_MOTORSPORT(
+        displayName = "Forza Motorsport",
+        shortTag = "FM",
+        defaultCategory = CarCategory.GT_ENDURANCE,
+        defaultPort = 5300,
+        badgeColorHex = 0xFFFF9100,
+        protocolSummary = "Data Out UDP Dash 311/331B (5300)",
+    ),
+    FORZA_HORIZON_5(
+        displayName = "Forza Horizon 5",
+        shortTag = "FH5",
+        defaultCategory = CarCategory.STREET_TOURING,
+        defaultPort = 5300,
+        badgeColorHex = 0xFFFF6D00,
+        protocolSummary = "Horizon Data Out UDP 323/324B (5300)",
+    ),
+    ASSETTO_CORSA(
+        displayName = "Assetto Corsa",
+        shortTag = "AC",
+        defaultCategory = CarCategory.STREET_TOURING,
+        defaultPort = 9996,
+        badgeColorHex = 0xFF00E676,
+        protocolSummary = "Remote Telemetry Handshake (9996)",
+    ),
+    ASSETTO_CORSA_COMPETIZIONE(
+        displayName = "Assetto Corsa Comp.",
+        shortTag = "ACC",
+        defaultCategory = CarCategory.GT_ENDURANCE,
+        defaultPort = 9000,
+        badgeColorHex = 0xFF00C853,
+        protocolSummary = "Broadcasting UDP Protocol (9000)",
+    ),
+    PROJECT_CARS_2(
+        displayName = "Project CARS 2",
+        shortTag = "PC2",
+        defaultCategory = CarCategory.GT_ENDURANCE,
+        defaultPort = 5606,
+        badgeColorHex = 0xFFB026FF,
+        protocolSummary = "SMS UDP v2 Protocol (5606)",
+    ),
+    AUTOMOBILISTA_2(
+        displayName = "Automobilista 2",
+        shortTag = "AMS2",
+        defaultCategory = CarCategory.GT_ENDURANCE,
+        defaultPort = 5606,
+        badgeColorHex = 0xFF9C27B0,
+        protocolSummary = "SMS UDP v2 Protocol (5606)",
+    );
+
+    companion object {
+        fun fromName(raw: String?): GameTitle =
+            entries.firstOrNull { it.name == raw } ?: F1_25
+    }
+}
+
+data class VehicleCapabilities(
+    val hasErs: Boolean = true,
+    val hasDrs: Boolean = true,
+    val hasTractionControlAbs: Boolean = false,
+    val hasTurboBoost: Boolean = false,
+    val hasSuspensionTravel: Boolean = false,
+    val hasTireSlipRatio: Boolean = false,
+    val hasOpponentGrid: Boolean = true,
+    val hasPitStrategy: Boolean = true,
+    val hasEngineOilWater: Boolean = false,
+    val hasBrakeTemps: Boolean = true,
+    val hasAeroDamage: Boolean = true,
+    val hasPowerUnitWear: Boolean = true,
+)
 
 enum class TyreCompound(
     val code: String,
@@ -115,10 +243,15 @@ data class CarTelemetrySample(
     val gForceLon: Float = 0f,
     val deltaMs: Int = 0,
     val lapProgress: Float = 0f,
+    val turboBoostBar: Float = 0f,
+    val tcActive: Boolean = false,
+    val absActive: Boolean = false,
+    val handbrake: Float = 0f,
+    val suggestedGear: Int = 0,
 )
 
 /**
- * Wheel order matches EA Sports F1 25 UDP array indexing:
+ * Wheel indexing convention:
  * 0 = RL (Traseiro Esq), 1 = RR (Traseiro Dir), 2 = FL (Dianteiro Esq), 3 = FR (Dianteiro Dir)
  */
 data class WheelData(
@@ -130,6 +263,8 @@ data class WheelData(
     val damagePct: Int = 0,
     val blistersPct: Int = 0,
     val brakeTempC: Int = 420,
+    val slipRatio: Float = 0f,
+    val suspensionTravelMm: Float = 0f,
 )
 
 data class CarConditionState(
@@ -153,6 +288,13 @@ data class CarConditionState(
     val fuelRemainingLaps: Float = 14.2f,
     val fuelMix: String = "Padrão",
     val brakeBiasPct: Int = 56,
+    val oilTempC: Int = 98,
+    val waterTempC: Int = 86,
+    val oilPressureBar: Float = 4.2f,
+    val tcLevel: Int = 0,
+    val absLevel: Int = 0,
+    val turboBoostBar: Float = 0f,
+    val fuelCapacityLiters: Float = 110f,
 )
 
 data class GridCarEntry(
@@ -249,6 +391,9 @@ data class SetupDiagnosticInsight(
 
 data class SetupRecommendation(
     val trackProfile: TrackProfile,
+    val carCategory: CarCategory = CarCategory.FORMULA,
+    val aeroLabelPrimary: String = "Asa Dianteira",
+    val aeroLabelSecondary: String = "Asa Traseira",
     val aeroFrontWing: Int,
     val aeroRearWing: Int,
     val diffOnThrottle: Int,
@@ -267,6 +412,9 @@ data class SetupRecommendation(
     val brakeBiasPct: Int,
     val frontPsi: Float,
     val rearPsi: Float,
+    val recommendedTcLevel: Int? = null,
+    val recommendedAbsLevel: Int? = null,
+    val targetHotPsiRange: String = "21.5 - 24.5 PSI",
     val insights: List<SetupDiagnosticInsight>,
 )
 
@@ -282,8 +430,13 @@ data class PitWindowPrediction(
 
 data class LiveTelemetryState(
     val sourceMode: TelemetrySourceMode = TelemetrySourceMode.SIMULATOR,
+    val selectedGameMode: GameTitle = GameTitle.AUTO,
+    val detectedGame: GameTitle = GameTitle.F1_25,
+    val carCategory: CarCategory = CarCategory.FORMULA,
+    val capabilities: VehicleCapabilities = GameCatalog.capabilitiesFor(GameTitle.F1_25),
     val connectionState: ConnectionState = ConnectionState.SIMULATOR_ACTIVE,
     val udpPort: Int = 20777,
+    val targetHostIp: String = "",
     val localIpAddress: String = "0.0.0.0",
     val packetCount: Long = 0L,
     val sessionMeta: SessionMeta = SessionMeta(),
@@ -297,4 +450,5 @@ data class LiveTelemetryState(
     val setupRecommendation: SetupRecommendation? = null,
     val selectedGridCarIndex: Int? = null,
     val activeSimulatorTrackId: Int = 18,
+    val keepScreenOn: Boolean = true,
 )

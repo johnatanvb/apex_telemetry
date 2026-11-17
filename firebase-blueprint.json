@@ -2,10 +2,12 @@
   "entities": {
     "TelemetrySession": {
       "title": "TelemetrySession",
-      "description": "Saved F1 25 race or practice telemetry session summary stored per authenticated user.",
+      "description": "Saved multi-game race or practice telemetry session summary stored per authenticated user.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "gameTitle": { "type": "string", "description": "Game identifier such as F1_25, GRAN_TURISMO_7, FORZA_HORIZON_5, etc." },
+        "carCategory": { "type": "string", "enum": ["FORMULA", "GT_ENDURANCE", "STREET_TOURING"], "description": "Vehicle category for adaptive dashboards" },
         "trackName": { "type": "string", "description": "Circuit display name" },
         "sessionType": { "type": "string", "description": "Race, Qualifying, or Practice" },
         "weather": { "type": "string", "description": "Track weather conditions" },
@@ -25,6 +27,8 @@
       },
       "required": [
         "userId",
+        "gameTitle",
+        "carCategory",
         "trackName",
         "sessionType",
         "weather",

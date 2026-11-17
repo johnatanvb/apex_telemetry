@@ -195,8 +195,16 @@ fun TrackAndGridScreen(
         // Grid Classification Header
         item {
             SectionHeader(
-                title = "Classificação do Grid ao Vivo",
-                subtitle = "Toque em um piloto para destacá-lo no mapa da pista",
+                title = if (state.capabilities.hasOpponentGrid) {
+                    "Classificação do Grid ao Vivo"
+                } else {
+                    "Posição do Carro na Pista"
+                },
+                subtitle = if (state.capabilities.hasOpponentGrid) {
+                    "Toque em um piloto para destacá-lo no mapa da pista"
+                } else {
+                    "${state.detectedGame.shortTag} envia apenas a telemetria do seu carro via UDP externo"
+                },
                 accentColor = F1Red,
             )
         }

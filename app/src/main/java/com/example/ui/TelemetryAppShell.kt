@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -50,6 +53,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,14 +63,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,6 +87,7 @@ import com.example.auth.signOut
 import com.example.data.cloud.FirestoreSessionRepository
 import com.example.data.prefs.TelemetryPreferencesRepository
 import com.example.telemetry.model.ConnectionState
+import com.example.telemetry.model.GameTitle
 import com.example.telemetry.model.TelemetrySourceMode
 import com.example.ui.components.AlertsCenterDialog
 import com.example.ui.components.LiveAlertTickerBanner
@@ -127,6 +133,7 @@ fun TelemetryAppShell(
     currentUserId: String,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember { CredentialManager.create(context) }
 
@@ -171,6 +178,14 @@ fun TelemetryAppShell(
     val lapsB by sessionsViewModel.lapsBState.collectAsStateWithLifecycle()
     val actionMessage by sessionsViewModel.actionMessage.collectAsStateWithLifecycle()
 
+    // Keep screen awake automatically while in active telemetry race mode
+    DisposableEffect(liveState.keepScreenOn) {
+        view.keepScreenOn = liveState.keepScreenOn
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: "telemetry"
@@ -178,6 +193,11 @@ fun TelemetryAppShell(
     val snackbarHostState = remember { SnackbarHostState() }
     var showAlertsDialog by remember { mutableStateOf(false) }
     var showUdpDialog by remember { mutableStateOf(false) }
+    var isCockpitFullscreen by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = isCockpitFullscreen) {
+        isCockpitFullscreen = false
+    }
 
     LaunchedEffect(cloudSaveState) {
         when (val s = cloudSaveState) {
@@ -219,8 +239,13 @@ fun TelemetryAppShell(
                 PitWallTopHeader(
                     connectionState = liveState.connectionState,
                     sourceMode = liveState.sourceMode,
+                    selectedGameMode = liveState.selectedGameMode,
+                    detectedGame = liveState.detectedGame,
                     udpPort = liveState.udpPort,
                     unackedAlerts = unackedCount,
+                    showCockpitToggle = currentRoute == "telemetry",
+                    isCockpitFullscreen = isCockpitFullscreen,
+                    onToggleCockpitFullscreen = { isCockpitFullscreen = !isCockpitFullscreen },
                     onOpenUdpSettings = { showUdpDialog = true },
                     onOpenAlerts = { showAlertsDialog = true },
                     onSignOut = {
@@ -229,7 +254,7 @@ fun TelemetryAppShell(
                 )
             },
             bottomBar = {
-                if (!isExpandedWidth) {
+                if (!isExpandedWidth && !isCockpitFullscreen) {
                     NavigationBar(
                         containerColor = AsphaltSurface,
                         contentColor = TextPrimary,
@@ -279,7 +304,7 @@ fun TelemetryAppShell(
                     .fillMaxSize()
                     .padding(innerPadding),
             ) {
-                if (isExpandedWidth) {
+                if (isExpandedWidth && !isCockpitFullscreen) {
                     NavigationRail(
                         containerColor = AsphaltSurface,
                         modifier = Modifier.fillMaxHeight(),
@@ -333,6 +358,7 @@ fun TelemetryAppShell(
                             TelemetryDashboardScreen(
                                 state = liveState,
                                 saveState = cloudSaveState,
+                                isCockpitFullscreen = isCockpitFullscreen,
                                 onSaveRaceClick = { telemetryViewModel.saveCurrentRaceToCloud("") },
                                 onSwitchToSimulator = {
                                     telemetryViewModel.switchSourceMode(TelemetrySourceMode.SIMULATOR)
@@ -389,11 +415,17 @@ fun TelemetryAppShell(
     if (showUdpDialog) {
         UdpSettingsDialog(
             currentMode = liveState.sourceMode,
+            selectedGame = liveState.selectedGameMode,
+            detectedGame = liveState.detectedGame,
             currentPort = liveState.udpPort,
+            targetHostIp = liveState.targetHostIp,
             localIp = liveState.localIpAddress,
             packetCount = liveState.packetCount,
+            keepScreenOn = liveState.keepScreenOn,
             onSwitchMode = telemetryViewModel::switchSourceMode,
-            onSavePort = telemetryViewModel::updateUdpPort,
+            onSelectGame = { game -> telemetryViewModel.selectGameMode(game) },
+            onToggleKeepScreenOn = telemetryViewModel::toggleKeepScreenOn,
+            onSaveNetworkSettings = telemetryViewModel::updateUdpSettings,
             onDismiss = { showUdpDialog = false },
         )
     }
@@ -403,8 +435,13 @@ fun TelemetryAppShell(
 private fun PitWallTopHeader(
     connectionState: ConnectionState,
     sourceMode: TelemetrySourceMode,
+    selectedGameMode: GameTitle,
+    detectedGame: GameTitle,
     udpPort: Int,
     unackedAlerts: Int,
+    showCockpitToggle: Boolean,
+    isCockpitFullscreen: Boolean,
+    onToggleCockpitFullscreen: () -> Unit,
     onOpenUdpSettings: () -> Unit,
     onOpenAlerts: () -> Unit,
     onSignOut: () -> Unit,
@@ -414,6 +451,16 @@ private fun PitWallTopHeader(
         ConnectionState.SIMULATOR_ACTIVE -> TelemetryCyan
         ConnectionState.WAITING_UDP -> SectorYellow
         ConnectionState.DISCONNECTED -> F1Red
+    }
+
+    val subtitleText = if (sourceMode == TelemetrySourceMode.UDP) {
+        if (selectedGameMode == GameTitle.AUTO && connectionState != ConnectionState.CONNECTED_UDP) {
+            "AUTO • UDP Multi-Porta"
+        } else {
+            "${detectedGame.shortTag} • UDP :$udpPort"
+        }
+    } else {
+        "${detectedGame.shortTag} • Simulador"
     }
 
     Row(
@@ -436,21 +483,20 @@ private fun PitWallTopHeader(
             Spacer(modifier = Modifier.width(10.dp))
             Column {
                 Text(
-                    text = "APEX 25",
+                    text = "APEX",
                     style = MaterialTheme.typography.titleLarge,
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = if (sourceMode == TelemetrySourceMode.UDP) "UDP :$udpPort" else "Simulador Ao Vivo",
+                    text = subtitleText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
+                    color = Color(detectedGame.badgeColorHex),
                 )
             }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Source & Status Pill
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
@@ -469,10 +515,23 @@ private fun PitWallTopHeader(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = connectionState.label,
+                    text = "${detectedGame.shortTag} • ${if (sourceMode == TelemetrySourceMode.UDP) "UDP" else "Sim"}",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextPrimary,
                 )
+            }
+
+            if (showCockpitToggle) {
+                IconButton(
+                    onClick = onToggleCockpitFullscreen,
+                    modifier = Modifier.testTag("cockpit_fullscreen_button"),
+                ) {
+                    Icon(
+                        imageVector = if (isCockpitFullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                        contentDescription = if (isCockpitFullscreen) "Sair do modo cockpit" else "Modo cockpit tela cheia",
+                        tint = if (isCockpitFullscreen) TelemetryCyan else TextSecondary,
+                    )
+                }
             }
 
             IconButton(
@@ -496,15 +555,17 @@ private fun PitWallTopHeader(
                 }
             }
 
-            IconButton(
-                onClick = onSignOut,
-                modifier = Modifier.testTag("sign_out_button"),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.Logout,
-                    contentDescription = "Sair da conta Google",
-                    tint = TextSecondary,
-                )
+            if (!isCockpitFullscreen) {
+                IconButton(
+                    onClick = onSignOut,
+                    modifier = Modifier.testTag("sign_out_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.Logout,
+                        contentDescription = "Sair da conta Google",
+                        tint = TextSecondary,
+                    )
+                }
             }
         }
     }

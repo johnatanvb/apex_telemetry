@@ -131,8 +131,13 @@ class FirestoreSessionRepository(
             val sanitizedNotes = notes.trim().take(300)
             val sourceName = if (state.sourceMode.name == "UDP") "UDP" else "SIMULATOR"
 
+            val gameName = state.detectedGame.name.take(40)
+            val categoryName = state.carCategory.name.take(24)
+
             val sessionPayload = mapOf(
                 "userId" to uid,
+                "gameTitle" to gameName,
+                "carCategory" to categoryName,
                 "trackName" to sanitizedTrack,
                 "sessionType" to sanitizedType,
                 "weather" to sanitizedWeather,

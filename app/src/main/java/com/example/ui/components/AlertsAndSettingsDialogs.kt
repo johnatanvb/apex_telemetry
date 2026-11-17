@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +40,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -44,11 +49,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.telemetry.data.GameCatalog
 import com.example.telemetry.model.AlertSeverity
 import com.example.telemetry.model.AlertThresholds
+import com.example.telemetry.model.GameTitle
 import com.example.telemetry.model.TelemetryAlert
 import com.example.telemetry.model.TelemetrySourceMode
 import com.example.ui.theme.AsphaltBorder
@@ -62,8 +70,13 @@ import com.example.ui.theme.TelemetryMonoFamily
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
+/**
+ * Hands-free top alert ticker: automatically hides after 6 seconds without requiring touch
+ * so it never obscures telemetry while driving.
+ */
 @Composable
 fun LiveAlertTickerBanner(
     alerts: List<TelemetryAlert>,
@@ -72,6 +85,16 @@ fun LiveAlertTickerBanner(
     modifier: Modifier = Modifier,
 ) {
     val topAlert = alerts.firstOrNull { !it.acknowledged } ?: return
+    var visible by remember(topAlert.id) { mutableStateOf(true) }
+
+    LaunchedEffect(topAlert.id) {
+        visible = true
+        delay(6000L)
+        visible = false
+    }
+
+    if (!visible) return
+
     val accent = when (topAlert.severity) {
         AlertSeverity.CRITICAL -> F1Red
         AlertSeverity.WARNING -> SectorYellow
@@ -83,8 +106,8 @@ fun LiveAlertTickerBanner(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(accent.copy(alpha = 0.16f))
-            .border(1.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+            .background(accent.copy(alpha = 0.18f))
+            .border(1.dp, accent.copy(alpha = 0.75f), RoundedCornerShape(10.dp))
             .clickable(onClick = onOpenAlertCenter)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .testTag("live_alert_banner"),
@@ -180,7 +203,7 @@ fun AlertsCenterDialog(
                                 color = TextPrimary,
                             )
                             Text(
-                                text = "Eleva motor/pneus e ativa janela estratégica",
+                                text = "Eleva motor/pneus e ativa alertas",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TextSecondary,
                             )
@@ -297,7 +320,7 @@ fun AlertsCenterDialog(
                     label = "Freios Superaquecidos",
                     valueText = "${brakeWarn.roundToInt()}°C",
                     value = brakeWarn,
-                    range = 800f..1050f,
+                    range = 700f..1050f,
                     onValueChange = { brakeWarn = it },
                 )
                 ThresholdSliderRow(
@@ -392,23 +415,40 @@ private fun ThresholdSliderRow(
 @Composable
 fun UdpSettingsDialog(
     currentMode: TelemetrySourceMode,
+    selectedGame: GameTitle,
+    detectedGame: GameTitle,
     currentPort: Int,
+    targetHostIp: String,
     localIp: String,
     packetCount: Long,
+    keepScreenOn: Boolean,
     onSwitchMode: (TelemetrySourceMode) -> Unit,
-    onSavePort: (Int) -> Unit,
+    onSelectGame: (GameTitle) -> Unit,
+    onToggleKeepScreenOn: (Boolean) -> Unit,
+    onSaveNetworkSettings: (Int, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var portText by remember(currentPort) { mutableStateOf(currentPort.toString()) }
+    var portText by remember(currentPort, selectedGame) { mutableStateOf(currentPort.toString()) }
+    var hostIpText by remember(targetHostIp) { mutableStateOf(targetHostIp) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AsphaltSurface,
         title = {
-            Text("Fonte de Telemetria F1 25", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SportsEsports, contentDescription = null, tint = TelemetryCyan)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Jogo & Conexão UDP", style = MaterialTheme.typography.titleLarge)
+            }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -430,6 +470,38 @@ fun UdpSettingsDialog(
                     }
                 }
 
+                // Game Selector with Auto Detection
+                Text(
+                    text = "SELECIONAR JOGO / DETECÇÃO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TelemetryCyan,
+                    fontWeight = FontWeight.Bold,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    GameCatalog.selectableGames.forEach { game ->
+                        val selected = game == selectedGame
+                        val badgeColor = Color(game.badgeColorHex)
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                onSelectGame(game)
+                                portText = game.defaultPort.toString()
+                            },
+                            label = { Text(game.shortTag) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = badgeColor.copy(alpha = 0.28f),
+                                selectedLabelColor = TextPrimary,
+                            ),
+                            modifier = Modifier.testTag("game_chip_${game.name}"),
+                        )
+                    }
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -438,11 +510,18 @@ fun UdpSettingsDialog(
                         .border(1.dp, AsphaltBorder, RoundedCornerShape(10.dp))
                         .padding(10.dp),
                 ) {
+                    Text(
+                        text = "${selectedGame.displayName} • Ativo: ${detectedGame.displayName}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(detectedGame.badgeColorHex),
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text("IP Local (Wi-Fi): $localIp", style = MaterialTheme.typography.labelMedium, color = TelemetryCyan)
                     Text("Pacotes recebidos: $packetCount", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Configure no F1 25: Formato UDP 2025, IP $localIp e a porta abaixo.",
+                        text = GameCatalog.setupInstructionsFor(selectedGame, localIp, currentPort),
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted,
                     )
@@ -453,25 +532,63 @@ fun UdpSettingsDialog(
                     onValueChange = { input ->
                         portText = input.filter { it.isDigit() }.take(5)
                     },
-                    label = { Text("Porta UDP (padrão 20777)") },
+                    label = { Text("Porta UDP (padrão ${selectedGame.defaultPort})") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("udp_port_input"),
                 )
+
+                OutlinedTextField(
+                    value = hostIpText,
+                    onValueChange = { input ->
+                        hostIpText = input.filter { it.isDigit() || it == '.' }.take(15)
+                    },
+                    label = { Text("IP do PlayStation / PC (opcional: GT7 / AC / ACC)") },
+                    placeholder = { Text("Ex.: 192.168.1.45") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("target_host_ip_input"),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Manter tela sempre acesa na corrida",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary,
+                        )
+                        Text(
+                            text = "Evita bloqueio de tela no modo sem toque",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                        )
+                    }
+                    Switch(
+                        checked = keepScreenOn,
+                        onCheckedChange = onToggleKeepScreenOn,
+                        colors = SwitchDefaults.colors(checkedTrackColor = TelemetryCyan),
+                        modifier = Modifier.testTag("keep_screen_on_switch"),
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val parsed = portText.toIntOrNull() ?: 20777
-                    onSavePort(parsed.coerceIn(1024, 65535))
+                    val parsed = portText.toIntOrNull() ?: selectedGame.defaultPort
+                    onSaveNetworkSettings(parsed.coerceIn(1024, 65535), hostIpText)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = F1Red),
                 modifier = Modifier.testTag("save_udp_port_button"),
             ) {
-                Text("Salvar Porta")
+                Text("Aplicar")
             }
         },
         dismissButton = {

@@ -5,8 +5,10 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.telemetry.model.AlertThresholds
+import com.example.telemetry.model.GameTitle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -16,6 +18,9 @@ class TelemetryPreferencesRepository(private val context: Context) {
 
     private object Keys {
         val UDP_PORT = intPreferencesKey("udp_port")
+        val SELECTED_GAME = stringPreferencesKey("selected_game")
+        val TARGET_HOST_IP = stringPreferencesKey("target_host_ip")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val ENGINE_WARN_C = intPreferencesKey("engine_warn_c")
         val ENGINE_CRIT_C = intPreferencesKey("engine_crit_c")
         val TYRE_WEAR_WARN_PCT = intPreferencesKey("tyre_wear_warn_pct")
@@ -29,6 +34,19 @@ class TelemetryPreferencesRepository(private val context: Context) {
 
     val udpPortFlow: Flow<Int> = context.telemetryDataStore.data.map { prefs ->
         prefs[Keys.UDP_PORT] ?: 20777
+    }
+
+    val selectedGameFlow: Flow<GameTitle> = context.telemetryDataStore.data.map { prefs ->
+        val raw = prefs[Keys.SELECTED_GAME]
+        if (raw == null) GameTitle.AUTO else GameTitle.entries.firstOrNull { it.name == raw } ?: GameTitle.AUTO
+    }
+
+    val targetHostIpFlow: Flow<String> = context.telemetryDataStore.data.map { prefs ->
+        prefs[Keys.TARGET_HOST_IP] ?: ""
+    }
+
+    val keepScreenOnFlow: Flow<Boolean> = context.telemetryDataStore.data.map { prefs ->
+        prefs[Keys.KEEP_SCREEN_ON] ?: true
     }
 
     val thresholdsFlow: Flow<AlertThresholds> = context.telemetryDataStore.data.map { prefs ->
@@ -48,6 +66,27 @@ class TelemetryPreferencesRepository(private val context: Context) {
     suspend fun saveUdpPort(port: Int) {
         context.telemetryDataStore.edit { prefs ->
             prefs[Keys.UDP_PORT] = port.coerceIn(1024, 65535)
+        }
+    }
+
+    suspend fun saveSelectedGame(game: GameTitle, updateDefaultPort: Boolean = true) {
+        context.telemetryDataStore.edit { prefs ->
+            prefs[Keys.SELECTED_GAME] = game.name
+            if (updateDefaultPort) {
+                prefs[Keys.UDP_PORT] = game.defaultPort
+            }
+        }
+    }
+
+    suspend fun saveTargetHostIp(hostIp: String) {
+        context.telemetryDataStore.edit { prefs ->
+            prefs[Keys.TARGET_HOST_IP] = hostIp.trim().take(64)
+        }
+    }
+
+    suspend fun saveKeepScreenOn(enabled: Boolean) {
+        context.telemetryDataStore.edit { prefs ->
+            prefs[Keys.KEEP_SCREEN_ON] = enabled
         }
     }
 

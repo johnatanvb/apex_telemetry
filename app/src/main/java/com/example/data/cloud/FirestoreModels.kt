@@ -11,6 +11,8 @@ import com.google.firebase.firestore.ServerTimestamp
 data class TelemetrySessionDoc(
     @DocumentId val id: String = "",
     val userId: String = "",
+    val gameTitle: String = "F1_25",
+    val carCategory: String = "FORMULA",
     val trackName: String = "",
     val sessionType: String = "",
     val weather: String = "",

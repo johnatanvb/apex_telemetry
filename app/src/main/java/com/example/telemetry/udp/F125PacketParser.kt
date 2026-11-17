@@ -3,7 +3,9 @@ package com.example.telemetry.udp
 import com.example.telemetry.data.TrackCatalog
 import com.example.telemetry.model.CarConditionState
 import com.example.telemetry.model.CarTelemetrySample
+import com.example.telemetry.model.CompletedLapSummary
 import com.example.telemetry.model.FlagStatus
+import com.example.telemetry.model.GameTitle
 import com.example.telemetry.model.GridCarEntry
 import com.example.telemetry.model.SectorStatus
 import com.example.telemetry.model.SessionMeta
@@ -14,7 +16,7 @@ import java.nio.ByteOrder
 import kotlin.math.max
 
 /**
- * Decodes EA Sports F1 25 Little-Endian UDP telemetry packets (29-byte header).
+ * Decodes EA Sports F1 23 / F1 24 / F1 25 Little-Endian UDP telemetry packets (29-byte header).
  */
 object F125PacketParser {
 
@@ -42,7 +44,9 @@ object F125PacketParser {
         val playerCarIndex: Int,
     )
 
-    class UdpMutableWorld {
+    class UdpMutableWorld(initialGame: GameTitle = GameTitle.F1_25) {
+        var detectedGame: GameTitle = initialGame
+        var detectedF1Year: Int = 2025
         var sessionMeta = SessionMeta()
         var playerSample = CarTelemetrySample()
         var carCondition = CarConditionState()
@@ -53,7 +57,7 @@ object F125PacketParser {
                 gridPosition = idx + 1,
                 driverCode = "P${idx + 1}",
                 driverName = "Piloto ${idx + 1}",
-                teamName = "F1 Team",
+                teamName = "Grid",
                 teamColorHex = 0xFF888899,
                 isPlayer = idx == 0,
                 lapProgress = 0f,
@@ -78,6 +82,19 @@ object F125PacketParser {
         var worldBoundsMaxX = 900f
         var worldBoundsMinZ = -900f
         var worldBoundsMaxZ = 900f
+        val completedLaps = mutableListOf<CompletedLapSummary>()
+        var lastRecordedLapNum: Int = 1
+        var currentLapMaxSpeed: Int = 0
+        val currentLapSpeedSamples = mutableListOf<Int>()
+        val worldTrailPoints = mutableListOf<Pair<Float, Float>>()
+    }
+
+    fun looksLikeF1Packet(bytes: ByteArray, length: Int): Boolean {
+        if (length < HEADER_SIZE) return false
+        val buf = ByteBuffer.wrap(bytes, 0, length).order(ByteOrder.LITTLE_ENDIAN)
+        val packetFormat = buf.getShort(0).toInt() and 0xFFFF
+        val packetId = buf.get(6).toInt() and 0xFF
+        return packetFormat in 2023..2026 && packetId in 0..15
     }
 
     fun parsePacket(bytes: ByteArray, length: Int, world: UdpMutableWorld): Boolean {
@@ -90,7 +107,14 @@ object F125PacketParser {
         val playerCarIndex = (buf.get(27).toInt() and 0xFF).coerceIn(0, MAX_CARS - 1)
         world.playerIndex = playerCarIndex
 
-        if (packetFormat < 2023) return false
+        if (packetFormat < 2023 || packetFormat > 2026) return false
+
+        world.detectedF1Year = packetFormat
+        world.detectedGame = when (packetFormat) {
+            2023 -> GameTitle.F1_23
+            2024 -> GameTitle.F1_24
+            else -> GameTitle.F1_25
+        }
 
         val header = PacketHeader(packetFormat, gameYear, packetId, sessionTime, playerCarIndex)
         return when (packetId) {
@@ -198,7 +222,7 @@ object F125PacketParser {
         world: UdpMutableWorld,
         header: PacketHeader,
     ): Boolean {
-        val stride = 57
+        val stride = if (header.packetFormat <= 2023) 50 else 57
         if (length < HEADER_SIZE + stride * MAX_CARS) return false
         val trackLen = world.sessionMeta.trackLengthM.coerceAtLeast(1000).toFloat()
         var bestSessionLap = Long.MAX_VALUE
@@ -220,7 +244,11 @@ object F125PacketParser {
             val pitStops = buf.get(base + 31).toInt() and 0xFF
             val penalties = buf.get(base + 34).toInt() and 0xFF
             val warnings = buf.get(base + 35).toInt() and 0xFF
-            val gridPos = (buf.get(base + 39).toInt() and 0xFF).coerceIn(1, MAX_CARS)
+            val gridPos = if (stride >= 57) {
+                (buf.get(base + 39).toInt() and 0xFF).coerceIn(1, MAX_CARS)
+            } else {
+                (buf.get(base + 38).toInt() and 0xFF).coerceIn(1, MAX_CARS)
+            }
 
             val prevBest = world.drivers[i].bestLapMs
             val updatedBest = when {
@@ -251,6 +279,29 @@ object F125PacketParser {
             if (i == header.playerCarIndex) {
                 val s1Total = s1MinPart * 60_000L + s1MsPart
                 val s2Total = s2MinPart * 60_000L + s2MsPart
+                if (currentLapNum > world.lastRecordedLapNum && lastLapMs > 10_000L) {
+                    val lapS1 = if (world.sessionMeta.sector1Ms > 0L) world.sessionMeta.sector1Ms else (lastLapMs * 0.28).toLong()
+                    val lapS2 = if (world.sessionMeta.sector2Ms > 0L) world.sessionMeta.sector2Ms else (lastLapMs * 0.45).toLong()
+                    val lapS3 = (lastLapMs - lapS1 - lapS2).coerceAtLeast(0L)
+                    val trace = downsampleSpeedTrace(world.currentLapSpeedSamples)
+                    world.completedLaps.add(
+                        CompletedLapSummary(
+                            lapNumber = world.lastRecordedLapNum,
+                            lapTimeMs = lastLapMs,
+                            sector1Ms = lapS1,
+                            sector2Ms = lapS2,
+                            sector3Ms = lapS3,
+                            tyreCompound = world.drivers[i].tyreCompound,
+                            topSpeedKmh = world.currentLapMaxSpeed.coerceAtLeast(world.playerSample.speedKmh),
+                            avgThrottlePct = 72,
+                            maxTyreWearPct = world.carCondition.wheels.maxOfOrNull { it.wearPct.toInt() } ?: 0,
+                            speedTrace = trace,
+                        )
+                    )
+                    world.lastRecordedLapNum = currentLapNum
+                    world.currentLapMaxSpeed = 0
+                    world.currentLapSpeedSamples.clear()
+                }
                 world.sessionMeta = world.sessionMeta.copy(
                     currentLap = currentLapNum,
                     playerCurrentLapMs = currentLapMs,
@@ -329,6 +380,9 @@ object F125PacketParser {
         val tyreInnerTemps = IntArray(4) { idx -> buf.get(base + 34 + idx).toInt() and 0xFF }
         val engineTemp = buf.getShort(base + 38).toInt() and 0xFFFF
         val tyrePressures = FloatArray(4) { idx -> buf.getFloat(base + 40 + idx * 4) }
+
+        if (speed > world.currentLapMaxSpeed) world.currentLapMaxSpeed = speed
+        if (world.currentLapSpeedSamples.size < 200) world.currentLapSpeedSamples.add(speed)
 
         world.playerSample = world.playerSample.copy(
             timestampMs = (header.sessionTime * 1000f).toLong(),
@@ -416,19 +470,25 @@ object F125PacketParser {
         world: UdpMutableWorld,
         header: PacketHeader,
     ): Boolean {
-        val stride = 46
+        val hasBlisters = header.packetFormat >= 2025
+        val stride = if (hasBlisters) 46 else 42
         if (length < HEADER_SIZE + stride * MAX_CARS) return false
         val base = HEADER_SIZE + header.playerCarIndex * stride
         val wear = FloatArray(4) { idx -> buf.getFloat(base + idx * 4).coerceIn(0f, 100f) }
         val tyreDamage = IntArray(4) { idx -> buf.get(base + 16 + idx).toInt() and 0xFF }
-        val blisters = IntArray(4) { idx -> buf.get(base + 24 + idx).toInt() and 0xFF }
-        val wingLeft = buf.get(base + 28).toInt() and 0xFF
-        val wingRight = buf.get(base + 29).toInt() and 0xFF
-        val floor = buf.get(base + 32).toInt() and 0xFF
-        val gearbox = buf.get(base + 36).toInt() and 0xFF
-        val iceWear = buf.get(base + 41).toInt() and 0xFF
-        val mgukWear = buf.get(base + 42).toInt() and 0xFF
-        val turboWear = buf.get(base + 40).toInt() and 0xFF
+        val blisters = if (hasBlisters) {
+            IntArray(4) { idx -> buf.get(base + 24 + idx).toInt() and 0xFF }
+        } else {
+            IntArray(4) { 0 }
+        }
+        val offsetShift = if (hasBlisters) 0 else -4
+        val wingLeft = buf.get(base + 28 + offsetShift).toInt() and 0xFF
+        val wingRight = buf.get(base + 29 + offsetShift).toInt() and 0xFF
+        val floor = buf.get(base + 32 + offsetShift).toInt() and 0xFF
+        val gearbox = buf.get(base + 36 + offsetShift).toInt() and 0xFF
+        val turboWear = buf.get(base + 40 + offsetShift).toInt() and 0xFF
+        val iceWear = buf.get(base + 41 + offsetShift).toInt() and 0xFF
+        val mgukWear = if (hasBlisters) buf.get(base + 42).toInt() and 0xFF else 0
 
         val updatedWheels = world.carCondition.wheels.mapIndexed { idx, w ->
             w.copy(
@@ -448,5 +508,12 @@ object F125PacketParser {
             turboWearPct = turboWear,
         )
         return true
+    }
+
+    internal fun downsampleSpeedTrace(samples: List<Int>): List<Int> {
+        if (samples.isEmpty()) return List(40) { 200 }
+        if (samples.size <= 40) return samples
+        val step = samples.size / 40f
+        return List(40) { idx -> samples[(idx * step).toInt().coerceIn(0, samples.lastIndex)] }
     }
 }

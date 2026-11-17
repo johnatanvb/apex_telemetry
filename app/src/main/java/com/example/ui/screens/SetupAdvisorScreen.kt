@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.telemetry.model.AlertSeverity
+import com.example.telemetry.model.CarCategory
 import com.example.telemetry.model.LiveTelemetryState
 import com.example.telemetry.model.SetupDiagnosticInsight
 import com.example.ui.components.MetricPill
@@ -65,12 +65,11 @@ fun SetupAdvisorScreen(
             }
         } else {
             val track = setup.trackProfile
-            // Track Characteristics Card
             item {
                 PitWallCard {
                     SectionHeader(
                         title = "DNA da Pista: ${track.name}",
-                        subtitle = "${track.country} • ${track.cornersCount} curvas • ${track.elevationChangeM}m de desnível",
+                        subtitle = "${state.detectedGame.displayName} • ${track.cornersCount} curvas • ${track.elevationChangeM}m desnível",
                         accentColor = SectorPurple,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -91,8 +90,8 @@ fun SetupAdvisorScreen(
                             modifier = Modifier.weight(1f),
                         )
                         MetricPill(
-                            label = "PNEUS",
-                            value = track.tyreStressLevel.substringBefore(" "),
+                            label = "JANELA PSI",
+                            value = setup.targetHotPsiRange.substringBefore(" "),
                             accentColor = F1Red,
                             modifier = Modifier.weight(1f),
                         )
@@ -106,12 +105,11 @@ fun SetupAdvisorScreen(
                 }
             }
 
-            // Recommended Numeric Setup Sheet
             item {
                 PitWallCard(borderColor = TelemetryCyan.copy(alpha = 0.55f)) {
                     SectionHeader(
-                        title = "Setup Recomendado F1 25",
-                        subtitle = "Recalculado com base na telemetria térmica e velocidade",
+                        title = "${setup.carCategory.setupTitle} (${state.detectedGame.shortTag})",
+                        subtitle = "Ajustes recalculados pela telemetria térmica e categoria do carro",
                         accentColor = TelemetryCyan,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -119,18 +117,32 @@ fun SetupAdvisorScreen(
                     SetupCategoryGrid(
                         title = "AERODINÂMICA",
                         items = listOf(
-                            "Asa Dianteira" to "${setup.aeroFrontWing}",
-                            "Asa Traseira" to "${setup.aeroRearWing}",
+                            setup.aeroLabelPrimary to "${setup.aeroFrontWing}",
+                            setup.aeroLabelSecondary to "${setup.aeroRearWing}",
                         ),
                     )
                     Spacer(modifier = Modifier.height(10.dp))
-                    SetupCategoryGrid(
-                        title = "TRANSMISSÃO (DIFERENCIAL)",
-                        items = listOf(
-                            "Aceleração (On)" to "${setup.diffOnThrottle}%",
-                            "Desaceleração (Off)" to "${setup.diffOffThrottle}%",
-                        ),
-                    )
+
+                    if (setup.recommendedTcLevel != null && setup.recommendedAbsLevel != null) {
+                        SetupCategoryGrid(
+                            title = "ELETRÔNICA & TRAÇÃO",
+                            items = listOf(
+                                "Controle de Tração (TC)" to "Nível ${setup.recommendedTcLevel}",
+                                "Freio ABS" to "Nível ${setup.recommendedAbsLevel}",
+                                "Dif. Aceleração" to "${setup.diffOnThrottle}%",
+                                "Dif. Desaceleração" to "${setup.diffOffThrottle}%",
+                            ),
+                        )
+                    } else {
+                        SetupCategoryGrid(
+                            title = "TRANSMISSÃO (DIFERENCIAL)",
+                            items = listOf(
+                                "Aceleração (On)" to "${setup.diffOnThrottle}%",
+                                "Desaceleração (Off)" to "${setup.diffOffThrottle}%",
+                            ),
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
                     SetupCategoryGrid(
                         title = "GEOMETRIA DA SUSPENSÃO",
@@ -142,17 +154,19 @@ fun SetupAdvisorScreen(
                         ),
                     )
                     Spacer(modifier = Modifier.height(10.dp))
+                    val heightUnit = if (setup.carCategory == CarCategory.FORMULA) "" else " mm"
+                    val suspLabel = if (setup.carCategory == CarCategory.FORMULA) "Suspensão D / T" else "Molas D / T"
                     SetupCategoryGrid(
                         title = "SUSPENSÃO & ALTURA",
                         items = listOf(
-                            "Suspensão D / T" to "${setup.frontSuspension} / ${setup.rearSuspension}",
+                            suspLabel to "${setup.frontSuspension} / ${setup.rearSuspension}",
                             "Barra Estab. D / T" to "${setup.frontAntiRollBar} / ${setup.rearAntiRollBar}",
-                            "Altura Solo D / T" to "${setup.frontRideHeight} / ${setup.rearRideHeight}",
+                            "Altura Solo D / T" to "${setup.frontRideHeight}$heightUnit / ${setup.rearRideHeight}$heightUnit",
                         ),
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     SetupCategoryGrid(
-                        title = "FREIOS & PRESSÃO DOS PNEUS",
+                        title = "FREIOS & PRESSÃO DOS PNEUS (${setup.targetHotPsiRange})",
                         items = listOf(
                             "Pressão Freio" to "${setup.brakePressurePct}%",
                             "Balanço Freio" to "${setup.brakeBiasPct}%",
@@ -163,11 +177,10 @@ fun SetupAdvisorScreen(
                 }
             }
 
-            // Telemetry-Backed Diagnostic Insights
             item {
                 SectionHeader(
                     title = "Diagnóstico de Telemetria & Por Quê",
-                    subtitle = "Justificativa técnica dos ajustes recomendados",
+                    subtitle = "Justificativa técnica adaptada à categoria ${setup.carCategory.label}",
                     accentColor = F1Red,
                 )
             }

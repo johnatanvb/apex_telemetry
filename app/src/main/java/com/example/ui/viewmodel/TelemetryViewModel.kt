@@ -7,6 +7,7 @@ import com.example.data.prefs.TelemetryPreferencesRepository
 import com.example.telemetry.analysis.AlertEngine
 import com.example.telemetry.analysis.SetupAdvisorEngine
 import com.example.telemetry.model.AlertThresholds
+import com.example.telemetry.model.GameTitle
 import com.example.telemetry.model.LiveTelemetryState
 import com.example.telemetry.model.TelemetrySourceMode
 import com.example.telemetry.sim.RaceSimulatorEngine
@@ -52,6 +53,15 @@ class TelemetryViewModel(
     val udpPort: StateFlow<Int> = prefsRepository.udpPortFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), 20777)
 
+    val selectedGameMode: StateFlow<GameTitle> = prefsRepository.selectedGameFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), GameTitle.AUTO)
+
+    val targetHostIp: StateFlow<String> = prefsRepository.targetHostIpFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), "")
+
+    val keepScreenOn: StateFlow<Boolean> = prefsRepository.keepScreenOnFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), true)
+
     val thresholds: StateFlow<AlertThresholds> = prefsRepository.thresholdsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), AlertThresholds())
 
@@ -59,27 +69,44 @@ class TelemetryViewModel(
 
     private data class StreamKey(
         val mode: TelemetrySourceMode,
+        val game: GameTitle,
         val port: Int,
+        val targetHostIp: String,
         val trackId: Int,
         val stressTest: Boolean,
     )
 
     private val rawStream = combine(
         _sourceMode,
+        selectedGameMode,
         udpPort,
+        targetHostIp,
         _simTrackId,
         _stressTest,
-    ) { mode, port, trackId, stress ->
-        StreamKey(mode, port, trackId, stress)
+    ) { arr ->
+        StreamKey(
+            mode = arr[0] as TelemetrySourceMode,
+            game = arr[1] as GameTitle,
+            port = arr[2] as Int,
+            targetHostIp = arr[3] as String,
+            trackId = arr[4] as Int,
+            stressTest = arr[5] as Boolean,
+        )
     }.flatMapLatest { key ->
         val localIp = UdpTelemetryReceiver.resolveLocalIpv4Address()
         when (key.mode) {
-            TelemetrySourceMode.UDP -> udpReceiver.observeUdpStream(key.port)
+            TelemetrySourceMode.UDP -> udpReceiver.observeUdpStream(
+                selectedGame = key.game,
+                customPort = key.port,
+                targetHostIp = key.targetHostIp,
+            )
+
             TelemetrySourceMode.SIMULATOR -> simulatorEngine.observeSimulation(
                 trackId = key.trackId,
                 udpPort = key.port,
                 localIp = localIp,
                 stressTestMode = key.stressTest,
+                simulatedGame = key.game,
             )
         }
     }
@@ -89,7 +116,8 @@ class TelemetryViewModel(
         thresholds,
         _acknowledgedAlerts,
         _selectedGridCarIndex,
-    ) { raw, thresh, acks, selectedCar ->
+        keepScreenOn,
+    ) { raw, thresh, acks, selectedCar, keepOn ->
         val alertResult = alertEngine.evaluate(raw, thresh, acks)
         val setupRec = setupAdvisor.analyzeAndRecommend(raw)
         raw.copy(
@@ -97,6 +125,7 @@ class TelemetryViewModel(
             pitWindow = alertResult.pitWindow,
             setupRecommendation = setupRec,
             selectedGridCarIndex = selectedCar,
+            keepScreenOn = keepOn,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -106,6 +135,13 @@ class TelemetryViewModel(
 
     fun switchSourceMode(mode: TelemetrySourceMode) {
         _sourceMode.value = mode
+    }
+
+    fun selectGameMode(game: GameTitle, updateDefaultPort: Boolean = true) {
+        _acknowledgedAlerts.value = emptySet()
+        viewModelScope.launch {
+            prefsRepository.saveSelectedGame(game, updateDefaultPort = updateDefaultPort)
+        }
     }
 
     fun selectSimulatorTrack(trackId: Int) {
@@ -125,9 +161,16 @@ class TelemetryViewModel(
         _selectedGridCarIndex.value = if (_selectedGridCarIndex.value == carIndex) null else carIndex
     }
 
-    fun updateUdpPort(port: Int) {
+    fun updateUdpSettings(port: Int, hostIp: String) {
         viewModelScope.launch {
             prefsRepository.saveUdpPort(port)
+            prefsRepository.saveTargetHostIp(hostIp)
+        }
+    }
+
+    fun toggleKeepScreenOn(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepository.saveKeepScreenOn(enabled)
         }
     }
 

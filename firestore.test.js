@@ -19,6 +19,8 @@ const emulatorPort = parseInt(emulatorPortStr, 10);
 function validSessionPayload(uid, now = new Date(Date.now() - 2000)) {
   return {
     userId: uid,
+    gameTitle: "GRAN_TURISMO_7",
+    carCategory: "GT_ENDURANCE",
     trackName: "Interlagos (São Paulo)",
     sessionType: "Corrida",
     weather: "Seco",

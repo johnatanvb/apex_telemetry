@@ -86,6 +86,7 @@ fun HistoryAndCompareScreen(
     modifier: Modifier = Modifier,
 ) {
     var notesInput by remember { mutableStateOf("") }
+    var selectedGameFilter by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -169,9 +170,50 @@ fun HistoryAndCompareScreen(
             }
 
             is UiState.Success -> {
-                val sessions = sessionsState.data
+                val allSessions = sessionsState.data
+                val availableGames = allSessions.map { it.gameTitle.ifBlank { "F1_25" } }.distinct()
+                val sessions = if (selectedGameFilter == null) {
+                    allSessions
+                } else {
+                    allSessions.filter { it.gameTitle.ifBlank { "F1_25" } == selectedGameFilter }
+                }
                 val sessionA = sessions.firstOrNull { it.id == selectedSessionAId } ?: sessions.getOrNull(0)
                 val sessionB = sessions.firstOrNull { it.id == selectedSessionBId } ?: sessions.getOrNull(1)
+
+                if (availableGames.size > 1) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = selectedGameFilter == null,
+                                onClick = { selectedGameFilter = null },
+                                label = { Text("Todos os Jogos") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = TelemetryCyan.copy(alpha = 0.24f),
+                                    selectedLabelColor = TelemetryCyan,
+                                ),
+                            )
+                            availableGames.forEach { gameKey ->
+                                val gameObj = com.example.telemetry.model.GameTitle.fromName(gameKey)
+                                FilterChip(
+                                    selected = selectedGameFilter == gameKey,
+                                    onClick = {
+                                        selectedGameFilter = if (selectedGameFilter == gameKey) null else gameKey
+                                    },
+                                    label = { Text(gameObj.shortTag) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(gameObj.badgeColorHex).copy(alpha = 0.28f),
+                                        selectedLabelColor = TextPrimary,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Side-by-side Race Comparison Tool
                 item {
@@ -207,10 +249,11 @@ fun HistoryAndCompareScreen(
                             ) {
                                 sessions.forEachIndexed { idx, s ->
                                     val selected = s.id == sessionA?.id
+                                    val gameTag = com.example.telemetry.model.GameTitle.fromName(s.gameTitle).shortTag
                                     FilterChip(
                                         selected = selected,
                                         onClick = { onSelectSessionA(s.id) },
-                                        label = { Text("#${idx + 1} ${s.trackName.substringBefore(" (")}") },
+                                        label = { Text("#${idx + 1} [$gameTag] ${s.trackName.substringBefore(" (")}") },
                                         colors = FilterChipDefaults.filterChipColors(
                                             selectedContainerColor = TelemetryCyan.copy(alpha = 0.25f),
                                             selectedLabelColor = TelemetryCyan,
@@ -230,10 +273,11 @@ fun HistoryAndCompareScreen(
                             ) {
                                 sessions.forEachIndexed { idx, s ->
                                     val selected = s.id == sessionB?.id
+                                    val gameTag = com.example.telemetry.model.GameTitle.fromName(s.gameTitle).shortTag
                                     FilterChip(
                                         selected = selected,
                                         onClick = { onSelectSessionB(s.id) },
-                                        label = { Text("#${idx + 1} ${s.trackName.substringBefore(" (")}") },
+                                        label = { Text("#${idx + 1} [$gameTag] ${s.trackName.substringBefore(" (")}") },
                                         colors = FilterChipDefaults.filterChipColors(
                                             selectedContainerColor = F1Red.copy(alpha = 0.28f),
                                             selectedLabelColor = TextPrimary,
@@ -346,6 +390,12 @@ private fun SideBySideMetricsTable(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ComparisonRow(
+            metric = "Jogo",
+            valA = com.example.telemetry.model.GameTitle.fromName(a.gameTitle).shortTag,
+            valB = com.example.telemetry.model.GameTitle.fromName(b.gameTitle).shortTag,
+            aBetter = true,
+        )
+        ComparisonRow(
             metric = "Melhor Volta",
             valA = formatLapTimeMs(a.bestLapMs),
             valB = formatLapTimeMs(b.bestLapMs),
@@ -423,6 +473,8 @@ private fun SavedSessionRow(
     onSelectCompare: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val game = com.example.telemetry.model.GameTitle.fromName(session.gameTitle)
+    val gameColor = Color(game.badgeColorHex)
     val borderColor = when {
         isSelectedA -> TelemetryCyan
         isSelectedB -> F1Red
@@ -444,11 +496,27 @@ private fun SavedSessionRow(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(gameColor.copy(alpha = 0.2f))
+                                .border(1.dp, gameColor.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = game.shortTag,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = gameColor,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = session.trackName,
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                         )
                         if (isSelectedA || isSelectedB) {
                             Spacer(modifier = Modifier.width(6.dp))
